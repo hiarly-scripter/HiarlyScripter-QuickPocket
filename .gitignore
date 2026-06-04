@@ -1,0 +1,31 @@
+# Build outputs
+bin/
+build/
+obj/
+
+# Debug symbols (build artifacts)
+*.pdb
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Logs e temporários
+*.log
+*.tmp
+*.bak
+*.dll.old
+
+# Distribuição (zips reproduzidos a partir do source)
+*.zip
+
+# Instalações externas (r2modman / BepInEx / game)
+BepInEx/
+r2modman/
+Thunderstore/
+
+# Pastas de release
+dist/
+release/
+Release/
