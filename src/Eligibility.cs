@@ -33,7 +33,9 @@ namespace QuickPocket
         public int    ActorNumber;
         public string ItemName;
 
-        // Colliders e renderers ativos no momento do pocket
+        // Colliders e renderers da hierarquia inteira no momento do pocket.
+        // Guardamos tambem os que estavam desligados para impedir que scripts do
+        // item religuem hitboxes/visuais enquanto ele esta pocketado.
         public (Collider col,   bool originalEnabled)[] ModifiedColliders;
         public (Renderer rend,  bool originalEnabled)[] ModifiedRenderers;
 
@@ -54,10 +56,11 @@ namespace QuickPocket
         // Sem isso, luzes ficam visíveis no chão enquanto o item está pocketado.
         public (Light lt, bool originalEnabled)[] ModifiedLights;
 
-        // AudioSources — parados e desativados no hide para suprimir sons residuais.
-        // Campos: src=componente, wasEnabled=estado original, wasPlaying=estava tocando.
-        // No restore: re-habilitar; replay apenas se era loop (evitar replay de one-shots).
-        public (AudioSource src, bool wasEnabled, bool wasPlaying)[] ModifiedAudioSources;
+        // AudioSources — parados e mutados no hide para suprimir sons residuais.
+        // Importante: nao desabilitar AudioSource durante o pocket; alguns scripts
+        // continuam chamando Play() e Unity gera "Can not play a disabled audio source".
+        // Campos: src, wasEnabled, wasPlaying, wasMuted, originalVolume.
+        public (AudioSource src, bool wasEnabled, bool wasPlaying, bool wasMuted, float originalVolume)[] ModifiedAudioSources;
 
         // ParticleSystems — parados e limpos no hide.
         // No restore: Play() somente se estava emitindo originalmente.
@@ -68,9 +71,13 @@ namespace QuickPocket
         // Guardamos referências apenas para chamar Clear() no hide.
         public TrailRenderer[] ModifiedTrailRenderers;
 
-        // Behaviours de mapa/minimap/discovery — desativados no hide para suprimir
-        // marcadores visuais no TAB/minimap enquanto o item está pocketado.
-        // Capturados por tipo: qualquer Behaviour cujo nome contenha palavras-chave.
+        // LineRenderers — ja capturados em ModifiedRenderers, mas mantidos para
+        // diagnostico/logs e para futuras limpezas dedicadas.
+        public LineRenderer[] ModifiedLineRenderers;
+
+        // Behaviours que podem religar mapa/minimap, audio, efeitos ou dano.
+        // Desativados no hide e restaurados ao estado original no restore.
+        // Capturados por tipo: qualquer Behaviour cujo nome contenha palavras-chave seguras.
         public (Behaviour comp, bool wasEnabled)[] ModifiedMapBehaviours;
 
         // MapValuable — objeto SEPARADO no Map system que representa o ponto dourado
@@ -231,6 +238,16 @@ namespace QuickPocket
             if (Contains(nameClean, "Deployable") || Contains(rootName, "Deployable"))
                 return Finalise(info, false, "DeployableBlocked");
 
+            // PASSO 4c — Objetos perigosos com lógicas próprias de dano/audio.
+            // v1.0.11 bloqueia temporariamente Saw/Blade/Hazard/HurtCollider porque
+            // IceSawValuable possui Update/FixedUpdate, HurtCollider, triggerCollider
+            // e loop de audio. Suporte seguro fica para rodada futura.
+            if (Contains(nameClean, "Saw")    || Contains(rootName, "Saw") ||
+                Contains(nameClean, "Blade")  || Contains(rootName, "Blade") ||
+                Contains(nameClean, "Hazard") || Contains(rootName, "Hazard") ||
+                HasDangerousComponent(go))
+                return Finalise(info, false, "SpecialItemBlocked");
+
             // PASSO 5 — Tamanho
             info.IsSmall       = IsSmallItem(pgo, out float maxDim);
             info.RejectedMaxDim = maxDim;  // disponivel para calibrar mensagem TooLarge
@@ -368,6 +385,26 @@ namespace QuickPocket
         // Equivalente a source.Contains(value, StringComparison.OrdinalIgnoreCase).
         private static bool Contains(string source, string value) =>
             source != null && source.IndexOf(value, System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool HasDangerousComponent(GameObject go)
+        {
+            if (go == null) return false;
+
+            var behaviours = go.GetComponentsInChildren<Behaviour>(true);
+            foreach (var b in behaviours)
+            {
+                if (b == null) continue;
+                string tn = b.GetType().Name;
+                if (Contains(tn, "IceSaw") ||
+                    Contains(tn, "SawBlade") ||
+                    Contains(tn, "ValuableSaw") ||
+                    Contains(tn, "HurtCollider") ||
+                    Contains(tn, "Hazard"))
+                    return true;
+            }
+
+            return false;
+        }
 
         private static bool IsValidDim(float v) =>
             !float.IsNaN(v) && !float.IsInfinity(v) && v >= 0f;
