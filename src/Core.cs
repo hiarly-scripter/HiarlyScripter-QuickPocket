@@ -16,7 +16,7 @@ using ExitGames.Client.Photon;
 
 namespace QuickPocket
 {
-    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.11")]
+    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.12-test")]
     [BepInProcess("REPO.exe")]
     public class QuickPocketPlugin : BaseUnityPlugin
     {
@@ -73,7 +73,7 @@ namespace QuickPocket
             _harmony = new Harmony("com.hiarlyscripter.quickpocket");
             _harmony.PatchAll();
 
-            Log.LogInfo("[QuickPocket] v1.0.11 inicializado. Aguardando jogador...");
+            Log.LogInfo("[QuickPocket] v1.0.12-test inicializado. Aguardando jogador...");
         }
 
         private void BindConfigs()
@@ -448,6 +448,17 @@ namespace QuickPocket
 
             var snap = PocketOperations.SaveSnapshot(pgo, viewID, actorNumber);
             return PocketOperations.ValidateSnapshot(snap) ? snap : null;
+        }
+
+        private ComponentSnapshot FindHostedSnapshot(int actorNumber, int viewID)
+        {
+            if (!_hostedPockets.TryGetValue(actorNumber, out var list)) return null;
+
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].vid == viewID)
+                    return list[i].snap;
+
+            return null;
         }
 
         private void HideRemoteItem(int viewID, GameObject go, int actorNumber, HideMode mode, string reason)
@@ -1801,7 +1812,8 @@ namespace QuickPocket
         // Compara lista nova com lista anterior e aplica diffs (hide/restore).
         private void ProcessRemotePocketUpdate(int actorNumber, int[] newViewIDs)
         {
-            // HOTFIX v1.0.10 — Master early return.
+            // HOTFIX v1.0.12 - master hides remote additions locally, but still
+            // skips remote restore on removals to preserve the host-authored drop.
             //
             // Causa raiz do drop no local errado:
             //   HandleHostDropRequest chama RestoreSnapshot(go, dropPos) → posição correta.
@@ -1810,12 +1822,7 @@ namespace QuickPocket
             //   GetSafeDropPosition() = PlayerAvatarLocal().position = posição DO HOST.
             //   Resultado: item teleporta para o host, sobrescrevendo o restore correto.
             //
-            // O master gerencia todos os pockets via _hostedPockets diretamente.
-            // HideRemoteItem/RestoreWithSafeDefaults aqui seriam operações redundantes
-            // (pocket: ApplyHide já fez; drop: RestoreSnapshot já fez) E com posição errada.
-            // _remoteHides no master não é necessário — _hostedPockets cobre os mesmos itens,
-            // e OnPlayerLeftRoom os restaura via _hostedPockets antes de verificar _remoteHides.
-            if (SemiFunc.IsMasterClientOrSingleplayer()) return;
+            bool isMaster = SemiFunc.IsMasterClientOrSingleplayer();
 
             _remoteHides.TryGetValue(actorNumber, out var oldList);
             oldList = oldList ?? new List<int>();
@@ -1833,7 +1840,20 @@ namespace QuickPocket
                 var pv = PhotonView.Find(vid);
                 if (pv != null)
                 {
-                    HideRemoteItem(vid, pv.gameObject, actorNumber, HideMode.Remote, "RoomProperties");
+                    if (isMaster)
+                    {
+                        var snap = FindHostedSnapshot(actorNumber, vid);
+                        if (snap == null)
+                            snap = SaveLocalSnapshotFor(pv.gameObject, vid, actorNumber);
+
+                        PocketOperations.HidePocketedItemState(
+                            pv.gameObject, vid, actorNumber, HideMode.HostHosted,
+                            "RoomPropertiesHostAdd", snap);
+                    }
+                    else
+                    {
+                        HideRemoteItem(vid, pv.gameObject, actorNumber, HideMode.Remote, "RoomProperties");
+                    }
                 }
                 else
                 {
@@ -1858,10 +1878,14 @@ namespace QuickPocket
 
                 _pendingLateJoin.Remove(vid);
                 _pendingLateJoinActors.Remove(vid);
+                if (isMaster) continue;
+
                 var pv = PhotonView.Find(vid);
                 if (pv != null)
                     RestoreRemoteItem(vid, pv.gameObject, actorNumber, RestoreMode.Remote, null, "RoomProperties");
             }
+
+            if (isMaster) return;
 
             if (newList.Count > 0)
                 _remoteHides[actorNumber] = newList;

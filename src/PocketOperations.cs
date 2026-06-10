@@ -247,7 +247,7 @@ namespace QuickPocket
 
             bool markerHidden = SetMapMarkerVisible(
                 go, snap, viewID, ownerActor, visible: false, finalPos: null,
-                side: mode.ToString(), reason: reason);
+                side: MarkerSide(mode), reason: reason);
 
             var layers = snap != null && snap.ModifiedLayers != null
                 ? snap.ModifiedLayers
@@ -432,7 +432,7 @@ namespace QuickPocket
 
             string markerResult = SetMapMarkerVisible(
                 go, snap, viewID, ownerActor, visible: true, finalPos: finalPos,
-                side: mode.ToString(), reason: reason)
+                side: MarkerSide(mode), reason: reason)
                 ? "OK"
                 : "SkippedStale";
 
@@ -706,6 +706,37 @@ namespace QuickPocket
                 " reason=" + reason);
 
             return ok;
+        }
+
+        private static string MarkerSide(HideMode mode)
+        {
+            switch (mode)
+            {
+                case HideMode.HostHosted:
+                    return "Host";
+                case HideMode.OwnerAck:
+                    return "Owner";
+                case HideMode.Remote:
+                case HideMode.LateJoin:
+                    return "Observer";
+                default:
+                    return mode.ToString();
+            }
+        }
+
+        private static string MarkerSide(RestoreMode mode)
+        {
+            switch (mode)
+            {
+                case RestoreMode.HostHosted:
+                    return "Host";
+                case RestoreMode.OwnerAck:
+                    return "Owner";
+                case RestoreMode.Remote:
+                    return "Observer";
+                default:
+                    return mode.ToString();
+            }
         }
 
         private static bool IsMapMarkerHidden(GameObject go, ComponentSnapshot snap)
