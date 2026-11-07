@@ -29,3 +29,6 @@ Thunderstore/
 dist/
 release/
 Release/
+
+# Binários de backup/disabled
+_disabled/

@@ -67,6 +67,16 @@ namespace QuickPocket
             // e funciona corretamente.
             _mRunManagerChangeLevel = CheckMethod(typeof(RunManager),   "ChangeLevel", null, advisoryWarnings);
 
+            // Reflexao usada em Core.cs/PocketOperations.cs (advisory: o mod tem fallback).
+            // Validada aqui para o log apontar logo o que mudou apos um update do jogo.
+            if (AccessTools.Field(typeof(MapValuable), "spriteRenderer") == null)
+                advisoryWarnings.Add("missing field MapValuable.spriteRenderer (marcador do mapa)");
+            if (AccessTools.Field(typeof(LoadingUI), "levelAnimationCompleted") == null)
+                advisoryWarnings.Add("missing field LoadingUI.levelAnimationCompleted (gate do HUD)");
+            CheckMethod(typeof(SemiFunc), "RunIsLevel", null, advisoryWarnings);
+            CheckMethod(typeof(LoadingUI), "StartLoading", null, advisoryWarnings);
+            CheckMethod(typeof(LoadingUI), "LevelAnimationComplete", null, advisoryWarnings);
+
             // ── Resultado ─────────────────────────────────────────────────────
             if (criticalErrors.Count > 0)
             {

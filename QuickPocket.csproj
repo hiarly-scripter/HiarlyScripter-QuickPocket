@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <AssemblyName>HiarlyScripter-QuickPocket</AssemblyName>
     <RootNamespace>QuickPocket</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.12</Version>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <Optimize>true</Optimize>

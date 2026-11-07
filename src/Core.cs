@@ -16,7 +16,7 @@ using ExitGames.Client.Photon;
 
 namespace QuickPocket
 {
-    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.10")]
+    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.12")]
     [BepInProcess("REPO.exe")]
     public class QuickPocketPlugin : BaseUnityPlugin
     {
@@ -73,7 +73,7 @@ namespace QuickPocket
             _harmony = new Harmony("com.hiarlyscripter.quickpocket");
             _harmony.PatchAll();
 
-            Log.LogInfo("[QuickPocket] v1.0.10 inicializado. Aguardando jogador...");
+            Log.LogInfo("[QuickPocket] v1.0.12 (update jogo 06/11) inicializado. Aguardando jogador...");
         }
 
         private void BindConfigs()
@@ -165,6 +165,26 @@ namespace QuickPocket
     // PocketManager — MonoBehaviour adicionado ao PlayerAvatar local.
     // Implementa IInRoomCallbacks (Photon sala) e IMatchmakingCallbacks (join/leave).
     // ═══════════════════════════════════════════════════════════════════════════
+    internal class PendingRequest
+    {
+        internal int Nonce;
+        internal int ViewID;
+        internal float Timestamp;
+        internal int Actor;
+        internal string Type;
+        internal string State;
+
+        internal PendingRequest(int nonce, int viewID, float timestamp, int actor, string type, string state)
+        {
+            Nonce = nonce;
+            ViewID = viewID;
+            Timestamp = timestamp;
+            Actor = actor;
+            Type = type;
+            State = state;
+        }
+    }
+
     public class PocketManager : MonoBehaviour, IInRoomCallbacks, IMatchmakingCallbacks, IOnEventCallback
     {
         // ── Singleton local ───────────────────────────────────────────────────
@@ -194,6 +214,7 @@ namespace QuickPocket
         private readonly Dictionary<int, List<int>> _remoteHides     = new Dictionary<int, List<int>>();
         // ViewID → tempo de expiracao da tentativa de hide
         private readonly Dictionary<int, float>      _pendingLateJoin = new Dictionary<int, float>();
+        private readonly Dictionary<int, int>        _pendingLateJoinActors = new Dictionary<int, int>();
 
         // ── Anti-race ─────────────────────────────────────────────────────────
         private bool  _isPocketing   = false;
@@ -302,6 +323,9 @@ namespace QuickPocket
         private readonly Dictionary<int, List<(int vid, ComponentSnapshot snap)>> _hostedPockets =
             new Dictionary<int, List<(int vid, ComponentSnapshot snap)>>();
 
+        private readonly Dictionary<int, ComponentSnapshot> _remoteSnapshots =
+            new Dictionary<int, ComponentSnapshot>();
+
         // ── Cliente: itens pocketados via host (sem snapshot local) ────────────
         // ViewIDs que este cliente pocketou via EV_REQUEST_POCKET/EV_ACK_POCKET.
         // Esses itens estão em _localPocket (para HUD) mas SEM _snapshots[viewID].
@@ -310,10 +334,10 @@ namespace QuickPocket
 
         // ── Requests pendentes (aguardando ACK do host) ───────────────────────
         // nonce → (viewID, timestamp)
-        private readonly Dictionary<int, (int vid, float t)> _pendingPocketAcks =
-            new Dictionary<int, (int vid, float t)>();
-        private readonly Dictionary<int, (int vid, float t)> _pendingDropAcks =
-            new Dictionary<int, (int vid, float t)>();
+        private readonly Dictionary<int, PendingRequest> _pendingPocketAcks =
+            new Dictionary<int, PendingRequest>();
+        private readonly Dictionary<int, PendingRequest> _pendingDropAcks =
+            new Dictionary<int, PendingRequest>();
         private int _nonce = 0;  // incrementado a cada request, identifica o par request/ack
 
         // ── TryFindSafeDropPosition — constantes ─────────────────────────────
@@ -378,6 +402,110 @@ namespace QuickPocket
         {
             if (raw == null) return "";
             return raw.Replace("(Clone)", "").TrimEnd();
+        }
+
+        private static bool HasPendingRequest(Dictionary<int, PendingRequest> requests, int viewID)
+        {
+            foreach (var kv in requests)
+                if (kv.Value != null && kv.Value.ViewID == viewID) return true;
+            return false;
+        }
+
+        private void TrackPending(Dictionary<int, PendingRequest> requests, int nonce, int viewID, string type)
+        {
+            int actor = SemiFunc.IsMultiplayer() && PhotonNetwork.LocalPlayer != null
+                ? PhotonNetwork.LocalPlayer.ActorNumber
+                : 0;
+            requests[nonce] = new PendingRequest(nonce, viewID, Time.time, actor, type, "Waiting");
+        }
+
+        private void ClearPendingRequests(string reason, bool hudReset)
+        {
+            int actor = SemiFunc.IsMultiplayer() && PhotonNetwork.LocalPlayer != null
+                ? PhotonNetwork.LocalPlayer.ActorNumber
+                : 0;
+            int cleared = _pendingPocketAcks.Count + _pendingDropAcks.Count;
+            _pendingPocketAcks.Clear();
+            _pendingDropAcks.Clear();
+            if (hudReset && _hudActionMessage == "Aguarde...")
+                SetHudMessage("");
+
+            if (cleared > 0)
+            {
+                QuickPocketPlugin.Log.LogInfo(
+                    "[QP:MP] cleanup actor=" + actor +
+                    " reason=" + reason +
+                    " restored=0 pendingCleared=" + cleared +
+                    " hudReset=" + hudReset);
+            }
+        }
+
+        private ComponentSnapshot SaveLocalSnapshotFor(GameObject go, int viewID, int actorNumber)
+        {
+            if (go == null) return null;
+            var pgo = go.GetComponent<PhysGrabObject>();
+            if (pgo == null) return null;
+
+            var snap = PocketOperations.SaveSnapshot(pgo, viewID, actorNumber);
+            return PocketOperations.ValidateSnapshot(snap) ? snap : null;
+        }
+
+        private ComponentSnapshot FindHostedSnapshot(int actorNumber, int viewID)
+        {
+            if (!_hostedPockets.TryGetValue(actorNumber, out var list)) return null;
+
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].vid == viewID)
+                    return list[i].snap;
+
+            return null;
+        }
+
+        private void HideRemoteItem(int viewID, GameObject go, int actorNumber, HideMode mode, string reason)
+        {
+            if (go == null) return;
+
+            var snap = SaveLocalSnapshotFor(go, viewID, actorNumber);
+            if (snap != null)
+                _remoteSnapshots[viewID] = snap;
+
+            PocketOperations.HidePocketedItemState(go, viewID, actorNumber, mode, reason, snap);
+        }
+
+        private void RestoreRemoteItem(int viewID, GameObject go, int actorNumber, RestoreMode mode, Vector3? finalPos, string reason)
+        {
+            if (go == null) return;
+
+            _remoteSnapshots.TryGetValue(viewID, out var snap);
+            PocketOperations.RestorePocketedItemState(go, viewID, actorNumber, mode, finalPos, reason, snap);
+            _remoteSnapshots.Remove(viewID);
+        }
+
+        private void SendHostedDropRequest(int viewID, Vector3 clientPos, string reason, bool trackPending)
+        {
+            int n = ++_nonce;
+            var reqData = new Hashtable
+            {
+                { "vid",   viewID },
+                { "nonce", n },
+                { "cpx",   clientPos.x },
+                { "cpy",   clientPos.y },
+                { "cpz",   clientPos.z },
+                { "reason", reason }
+            };
+            var reqOpts = new RaiseEventOptions { Receivers = ReceiverGroup.MasterClient };
+            PhotonNetwork.RaiseEvent(EV_REQUEST_DROP, reqData, reqOpts, SendOptions.SendReliable);
+
+            if (trackPending)
+                TrackPending(_pendingDropAcks, n, viewID, "Drop");
+
+            int localActor = PhotonNetwork.LocalPlayer.ActorNumber;
+            QuickPocketPlugin.Log.LogInfo(
+                "[QP:MP] request drop actor=" + localActor +
+                " viewID=" + viewID +
+                " nonce=" + n +
+                " clientPos=" + clientPos.ToString("F2") +
+                " reason=" + reason);
         }
 
         // ── Sincronizacao de limite ────────────────────────────────────────────
@@ -813,8 +941,7 @@ namespace QuickPocket
                             return;
                         }
 
-                        if (_pendingPocketAcks.ContainsValue((viewIDmp, _pendingPocketAcks.Count > 0
-                            ? _pendingPocketAcks[_nonce].t : 0f)))
+                        if (HasPendingRequest(_pendingPocketAcks, viewIDmp))
                         {
                             // Já tem request pendente para este item
                             SetHudMessage("Aguarde...");
@@ -831,7 +958,7 @@ namespace QuickPocket
                         var reqOpts = new RaiseEventOptions { Receivers = ReceiverGroup.MasterClient };
                         PhotonNetwork.RaiseEvent(EV_REQUEST_POCKET, reqData, reqOpts, SendOptions.SendReliable);
 
-                        _pendingPocketAcks[n] = (viewIDmp, Time.time);
+                        TrackPending(_pendingPocketAcks, n, viewIDmp, "Pocket");
                         SetHudMessage("Aguarde...");
 
                         int localActor = PhotonNetwork.LocalPlayer.ActorNumber;
@@ -881,10 +1008,10 @@ namespace QuickPocket
                     return;
                 }
 
-                if (!PocketOperations.ApplyHide(pgo.gameObject, snap))
+                if (!PocketOperations.HidePocketedItemState(pgo.gameObject, viewID, ownerActor, HideMode.Local, "TryPocket", snap))
                 {
                     QuickPocketPlugin.Log.LogInfo(
-                        "[QuickPocket] Pocket cancelado: ApplyHide falhou para " + info.ItemName);
+                        "[QuickPocket] Pocket cancelado: HideState falhou para " + info.ItemName);
                     return;
                 }
 
@@ -1306,8 +1433,11 @@ namespace QuickPocket
                 if (_clientHostedItems.Contains(viewID))
                 {
                     // Verificar se já tem request de drop pendente para este item
-                    foreach (var kv in _pendingDropAcks)
-                        if (kv.Value.vid == viewID) { SetHudMessage("Aguarde..."); return; }
+                    if (HasPendingRequest(_pendingDropAcks, viewID))
+                    {
+                        SetHudMessage("Aguarde...");
+                        return;
+                    }
 
                     int n = ++_nonce;
 
@@ -1327,7 +1457,7 @@ namespace QuickPocket
                     var reqOpts = new RaiseEventOptions { Receivers = ReceiverGroup.MasterClient };
                     PhotonNetwork.RaiseEvent(EV_REQUEST_DROP, reqData, reqOpts, SendOptions.SendReliable);
 
-                    _pendingDropAcks[n] = (viewID, Time.time);
+                    TrackPending(_pendingDropAcks, n, viewID, "Drop");
                     SetHudMessage("Aguarde...");
 
                     int localActor = PhotonNetwork.LocalPlayer.ActorNumber;
@@ -1458,7 +1588,24 @@ namespace QuickPocket
                 // Itens hospedados pelo master: sem snapshot local no cliente.
                 // O master é o único com o snapshot e autoridade de ApplyHide.
                 // Não tentar enforce local — o master já enforce no lado dele.
-                if (_clientHostedItems.Contains(key)) continue;
+                if (_clientHostedItems.Contains(key))
+                {
+                    if (!_remoteSnapshots.TryGetValue(key, out var hostedSnap))
+                    {
+                        int localActor = SemiFunc.IsMultiplayer() ? PhotonNetwork.LocalPlayer.ActorNumber : 0;
+                        hostedSnap = SaveLocalSnapshotFor(go, key, localActor);
+                        if (hostedSnap != null) _remoteSnapshots[key] = hostedSnap;
+                    }
+
+                    if (hostedSnap != null && !PocketOperations.IsPocketStateConsistent(go, hostedSnap))
+                    {
+                        QuickPocketPlugin.Log.LogDebug(
+                            "[QP:EnforceState] viewID=" + key + " fixed=ClientHosted reason=OwnerAck");
+                        int localActor = SemiFunc.IsMultiplayer() ? PhotonNetwork.LocalPlayer.ActorNumber : 0;
+                        PocketOperations.HidePocketedItemState(go, key, localActor, HideMode.OwnerAck, "EnforceClientHosted", hostedSnap);
+                    }
+                    continue;
+                }
 
                 if (!_snapshots.TryGetValue(key, out var snap)) continue;
 
@@ -1466,8 +1613,59 @@ namespace QuickPocket
                 if (!consistent)
                 {
                     QuickPocketPlugin.Log.LogDebug(
-                        "[QP] Enforce: re-aplicando hide em " + snap.ItemName);
-                    PocketOperations.ApplyHide(go, snap);
+                        "[QP:EnforceState] viewID=" + key + " fixed=Local reason=SnapshotInconsistent");
+                    PocketOperations.HidePocketedItemState(go, key, snap.ActorNumber, HideMode.Local, "EnforceLocal", snap);
+                }
+            }
+            EnforceHostedPocketState();
+            EnforceRemotePocketState();
+        }
+
+        private void EnforceHostedPocketState()
+        {
+            if (!SemiFunc.IsMasterClientOrSingleplayer()) return;
+
+            foreach (var kv in _hostedPockets)
+            {
+                int actor = kv.Key;
+                var list = kv.Value;
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    int vid = list[i].vid;
+                    var snap = list[i].snap;
+                    var pv = PhotonView.Find(vid);
+                    if (pv == null || pv.gameObject == null || snap == null) continue;
+
+                    if (!PocketOperations.IsPocketStateConsistent(pv.gameObject, snap))
+                    {
+                        QuickPocketPlugin.Log.LogDebug(
+                            "[QP:EnforceState] viewID=" + vid + " fixed=HostHosted actor=" + actor);
+                        PocketOperations.HidePocketedItemState(pv.gameObject, vid, actor, HideMode.HostHosted, "EnforceHosted", snap);
+                    }
+                }
+            }
+        }
+
+        private void EnforceRemotePocketState()
+        {
+            foreach (var kv in _remoteHides)
+            {
+                int actor = kv.Key;
+                var list = kv.Value;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    int vid = list[i];
+                    if (!_remoteSnapshots.TryGetValue(vid, out var snap)) continue;
+
+                    var pv = PhotonView.Find(vid);
+                    if (pv == null || pv.gameObject == null) continue;
+
+                    if (!PocketOperations.IsPocketStateConsistent(pv.gameObject, snap))
+                    {
+                        QuickPocketPlugin.Log.LogDebug(
+                            "[QP:EnforceState] viewID=" + vid + " fixed=Remote actor=" + actor);
+                        PocketOperations.HidePocketedItemState(pv.gameObject, vid, actor, HideMode.Remote, "EnforceRemote", snap);
+                    }
                 }
             }
         }
@@ -1477,6 +1675,8 @@ namespace QuickPocket
         // Aplica hide a um item de outro jogador (sem snapshot — nao somos donos).
         private void HideRemoteItem(int viewID, GameObject go)
         {
+            HideRemoteItem(viewID, go, 0, HideMode.Remote, "LegacyRemoteHide");
+            /*
             if (go == null) return;
 
             var rb = go.GetComponent<Rigidbody>();
@@ -1487,7 +1687,7 @@ namespace QuickPocket
                 // por Photon, setar velocity em corpo kinematic gera Warning Unity.
                 if (!rb.isKinematic)
                 {
-                    rb.velocity        = Vector3.zero;
+                    rb.linearVelocity        = Vector3.zero;
                     rb.angularVelocity = Vector3.zero;
                 }
                 rb.isKinematic      = true;
@@ -1524,11 +1724,14 @@ namespace QuickPocket
             go.transform.position = new Vector3(pos.x, -9999f, pos.z);
 
             QuickPocketPlugin.Log.LogDebug("[QP] HideRemoteItem ViewID=" + viewID);
+            */
         }
 
         // Restaura item sem snapshot (fallback seguro — estados padrao do Unity).
         private void RestoreWithSafeDefaults(GameObject go, Vector3 position)
         {
+            PocketOperations.RestorePocketedItemState(go, 0, 0, RestoreMode.SafeDefaults, position, "RestoreWithSafeDefaults", null);
+            /*
             if (go == null) return;
 
             // Layer default (0 = Default)
@@ -1549,11 +1752,12 @@ namespace QuickPocket
                 rb.isKinematic      = false;
                 rb.useGravity       = true;
                 rb.detectCollisions = true;
-                rb.velocity         = Vector3.zero;
+                rb.linearVelocity         = Vector3.zero;
                 rb.angularVelocity  = Vector3.zero;
             }
 
             QuickPocketPlugin.Log.LogDebug("[QP] RestoreWithSafeDefaults em " + go.name);
+            */
         }
 
         // Restaura visuais (renderers/colliders/rb) de um item remoto SEM alterar posição.
@@ -1566,6 +1770,11 @@ namespace QuickPocket
         // Diferença de RestoreWithSafeDefaults: não seta go.transform.position.
         private void RestoreRemoteVisuals(GameObject go)
         {
+            int viewID = 0;
+            var pv = go != null ? go.GetComponent<PhotonView>() : null;
+            if (pv != null) viewID = pv.ViewID;
+            RestoreRemoteItem(viewID, go, 0, RestoreMode.Remote, null, "RestoreRemoteVisuals");
+            /*
             if (go == null) return;
 
             // Restaurar layer para Default (0) em toda a hierarquia
@@ -1597,12 +1806,14 @@ namespace QuickPocket
                 if (src != null) src.enabled = true;
 
             QuickPocketPlugin.Log.LogDebug("[QP] RestoreRemoteVisuals em " + go.name);
+            */
         }
 
         // Compara lista nova com lista anterior e aplica diffs (hide/restore).
         private void ProcessRemotePocketUpdate(int actorNumber, int[] newViewIDs)
         {
-            // HOTFIX v1.0.10 — Master early return.
+            // HOTFIX v1.0.12 - master hides remote additions locally, but still
+            // skips remote restore on removals to preserve the host-authored drop.
             //
             // Causa raiz do drop no local errado:
             //   HandleHostDropRequest chama RestoreSnapshot(go, dropPos) → posição correta.
@@ -1611,12 +1822,7 @@ namespace QuickPocket
             //   GetSafeDropPosition() = PlayerAvatarLocal().position = posição DO HOST.
             //   Resultado: item teleporta para o host, sobrescrevendo o restore correto.
             //
-            // O master gerencia todos os pockets via _hostedPockets diretamente.
-            // HideRemoteItem/RestoreWithSafeDefaults aqui seriam operações redundantes
-            // (pocket: ApplyHide já fez; drop: RestoreSnapshot já fez) E com posição errada.
-            // _remoteHides no master não é necessário — _hostedPockets cobre os mesmos itens,
-            // e OnPlayerLeftRoom os restaura via _hostedPockets antes de verificar _remoteHides.
-            if (SemiFunc.IsMasterClientOrSingleplayer()) return;
+            bool isMaster = SemiFunc.IsMasterClientOrSingleplayer();
 
             _remoteHides.TryGetValue(actorNumber, out var oldList);
             oldList = oldList ?? new List<int>();
@@ -1634,12 +1840,26 @@ namespace QuickPocket
                 var pv = PhotonView.Find(vid);
                 if (pv != null)
                 {
-                    HideRemoteItem(vid, pv.gameObject);
+                    if (isMaster)
+                    {
+                        var snap = FindHostedSnapshot(actorNumber, vid);
+                        if (snap == null)
+                            snap = SaveLocalSnapshotFor(pv.gameObject, vid, actorNumber);
+
+                        PocketOperations.HidePocketedItemState(
+                            pv.gameObject, vid, actorNumber, HideMode.HostHosted,
+                            "RoomPropertiesHostAdd", snap);
+                    }
+                    else
+                    {
+                        HideRemoteItem(vid, pv.gameObject, actorNumber, HideMode.Remote, "RoomProperties");
+                    }
                 }
                 else
                 {
                     // Item ainda nao instanciado — agendar tentativa
                     _pendingLateJoin[vid] = Time.time + LATE_JOIN_TIMEOUT;
+                    _pendingLateJoinActors[vid] = actorNumber;
                     QuickPocketPlugin.Log.LogDebug(
                         "[QP] LateJoin: ViewID=" + vid + " pendente.");
                 }
@@ -1657,10 +1877,15 @@ namespace QuickPocket
                 if (newSet.Contains(vid)) continue;
 
                 _pendingLateJoin.Remove(vid);
+                _pendingLateJoinActors.Remove(vid);
+                if (isMaster) continue;
+
                 var pv = PhotonView.Find(vid);
                 if (pv != null)
-                    RestoreRemoteVisuals(pv.gameObject);
+                    RestoreRemoteItem(vid, pv.gameObject, actorNumber, RestoreMode.Remote, null, "RoomProperties");
             }
+
+            if (isMaster) return;
 
             if (newList.Count > 0)
                 _remoteHides[actorNumber] = newList;
@@ -1686,13 +1911,17 @@ namespace QuickPocket
                 var pv = PhotonView.Find(kvp.Key);
                 if (pv != null)
                 {
-                    HideRemoteItem(kvp.Key, pv.gameObject);
+                    int actorNumber = _pendingLateJoinActors.TryGetValue(kvp.Key, out var actor) ? actor : 0;
+                    HideRemoteItem(kvp.Key, pv.gameObject, actorNumber, HideMode.LateJoin, "LateJoin");
                     toRemove.Add(kvp.Key);
                 }
             }
 
             foreach (int id in toRemove)
+            {
                 _pendingLateJoin.Remove(id);
+                _pendingLateJoinActors.Remove(id);
+            }
         }
 
         // Le todo o estado de bolso de outros jogadores das Room Properties.
@@ -1754,10 +1983,15 @@ namespace QuickPocket
                 }
             }
 
+            foreach (int key in _localPocket)
+                _remoteSnapshots.Remove(key);
+
+            ClearPendingRequests("ClearLocalPocket", hudReset: true);
             _localPocket.Clear();
             _snapshots.Clear();
             _singleplayerObjects.Clear();
             _pendingRestore.Clear();
+            _clientHostedItems.Clear();
             _isPocketing   = false;
             _cooldownTimer = 0f;
             EligibilityChecker.ClearCache();
@@ -1772,10 +2006,11 @@ namespace QuickPocket
             _pendingRestore.Clear();
             _remoteHides.Clear();
             _pendingLateJoin.Clear();
+            _pendingLateJoinActors.Clear();
             _hostedPockets.Clear();
             _clientHostedItems.Clear();
-            _pendingPocketAcks.Clear();
-            _pendingDropAcks.Clear();
+            _remoteSnapshots.Clear();
+            ClearPendingRequests("ClearAllState", hudReset: true);
             _nonce                    = 0;
             _isPocketing              = false;
             _cooldownTimer            = 0f;
@@ -1815,10 +2050,7 @@ namespace QuickPocket
                     {
                         if (SemiFunc.IsMultiplayer() && PhotonNetwork.InRoom)
                         {
-                            int n = ++_nonce;
-                            var d = new Hashtable { { "vid", key }, { "nonce", n } };
-                            var o = new RaiseEventOptions { Receivers = ReceiverGroup.MasterClient };
-                            PhotonNetwork.RaiseEvent(EV_REQUEST_DROP, d, o, SendOptions.SendReliable);
+                            SendHostedDropRequest(key, deathPos, "Death", trackPending: true);
                         }
                         continue;
                     }
@@ -1883,10 +2115,7 @@ namespace QuickPocket
                     {
                         if (SemiFunc.IsMultiplayer() && PhotonNetwork.InRoom)
                         {
-                            int n = ++_nonce;
-                            var d = new Hashtable { { "vid", key }, { "nonce", n } };
-                            var o = new RaiseEventOptions { Receivers = ReceiverGroup.MasterClient };
-                            PhotonNetwork.RaiseEvent(EV_REQUEST_DROP, d, o, SendOptions.SendReliable);
+                            SendHostedDropRequest(key, dropPos, "LevelChange", trackPending: true);
                         }
                         continue;
                     }
@@ -2159,12 +2388,19 @@ namespace QuickPocket
 
         private static void ClientHideMapValuable(int vid, string itemName)
         {
+            var pm = Instance;
+            var pvLegacy = PhotonView.Find(vid);
+            if (pm != null && pvLegacy != null)
+                pm.HideRemoteItem(vid, pvLegacy.gameObject,
+                    SemiFunc.IsMultiplayer() ? PhotonNetwork.LocalPlayer.ActorNumber : 0,
+                    HideMode.OwnerAck, "ClientHideMapValuableLegacy");
+            /*
             var pv = PhotonView.Find(vid);
             if (pv == null) return;
             var valuableObj = pv.gameObject.GetComponent<ValuableObject>();
             if (valuableObj == null) return;
 
-            foreach (var mv in UnityEngine.Object.FindObjectsOfType<MapValuable>(true))
+            foreach (var mv in UnityEngine.Object.FindObjectsByType<MapValuable>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None))
             {
                 if (mv == null || mv.target != valuableObj) continue;
                 var srField = HarmonyLib.AccessTools.Field(typeof(MapValuable), "spriteRenderer");
@@ -2178,16 +2414,24 @@ namespace QuickPocket
                 }
                 break;
             }
+            */
         }
 
         private static void ClientRestoreMapValuable(int vid, string itemName)
         {
+            var pm = Instance;
+            var pvLegacy = PhotonView.Find(vid);
+            if (pm != null && pvLegacy != null)
+                pm.RestoreRemoteItem(vid, pvLegacy.gameObject,
+                    SemiFunc.IsMultiplayer() ? PhotonNetwork.LocalPlayer.ActorNumber : 0,
+                    RestoreMode.OwnerAck, null, "ClientRestoreMapValuableLegacy");
+            /*
             var pv = PhotonView.Find(vid);
             if (pv == null) return;
             var valuableObj = pv.gameObject.GetComponent<ValuableObject>();
             if (valuableObj == null) return;
 
-            foreach (var mv in UnityEngine.Object.FindObjectsOfType<MapValuable>(true))
+            foreach (var mv in UnityEngine.Object.FindObjectsByType<MapValuable>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None))
             {
                 if (mv == null || mv.target != valuableObj) continue;
                 // Garantir que o alvo ainda existe (não foi destruído durante o pocket)
@@ -2204,6 +2448,7 @@ namespace QuickPocket
                 }
                 break;
             }
+            */
         }
 
         // ── IOnEventCallback ──────────────────────────────────────────────────
@@ -2256,25 +2501,34 @@ namespace QuickPocket
             foreach (var kv in _hostedPockets)
                 foreach (var entry in kv.Value)
                     if (entry.vid == vid) { alreadyHosted = true; break; }
+            if (_localPocket.Contains(vid)) alreadyHosted = true;
 
             // Validar: limite do solicitante
             int senderCount = _hostedPockets.ContainsKey(senderActor)
                 ? _hostedPockets[senderActor].Count : 0;
             int effectiveLimit = Mathf.Clamp(QuickPocketPlugin.HostMaxOverride.Value, 1, 8);
             bool limitOK = senderCount < effectiveLimit;
+            bool actorFound;
+            TryGetPositionByActorNumber(senderActor, out actorFound);
+            bool hostReady = !_hudSuppressedForTransition && _cachedRunIsLevel;
 
             QuickPocketPlugin.Log.LogInfo(
                 "[QP:MP] host received pocket actor=" + senderActor +
                 " viewID=" + vid +
                 " exists=" + exists +
                 " alreadyHosted=" + alreadyHosted +
-                " limitOK=" + limitOK);
+                " limitOK=" + limitOK +
+                " actorFound=" + actorFound +
+                " hostReady=" + hostReady);
 
             var ackOpts = new RaiseEventOptions { TargetActors = new int[] { senderActor } };
 
-            if (!exists || alreadyHosted || !limitOK)
+            if (!exists || alreadyHosted || !limitOK || !actorFound || !hostReady)
             {
-                string reason = !exists ? "NotFound" : alreadyHosted ? "AlreadyPocketed" : "LimitReached";
+                string reason = !exists ? "NotFound" :
+                    alreadyHosted ? "AlreadyPocketed" :
+                    !limitOK ? "LimitReached" :
+                    !actorFound ? "ActorNotFound" : "LevelChanging";
                 var denyData  = new Hashtable { { "vid", vid }, { "nonce", nonce }, { "reason", reason } };
                 PhotonNetwork.RaiseEvent(EV_DENY_POCKET, denyData, ackOpts, SendOptions.SendReliable);
                 QuickPocketPlugin.Log.LogInfo(
@@ -2292,6 +2546,17 @@ namespace QuickPocket
                 return;
             }
 
+            var info = EligibilityChecker.Evaluate(pgo);
+            if (!info.Eligible)
+            {
+                var denyData = new Hashtable { { "vid", vid }, { "nonce", nonce }, { "reason", info.RejectReason ?? "NotEligible" } };
+                PhotonNetwork.RaiseEvent(EV_DENY_POCKET, denyData, ackOpts, SendOptions.SendReliable);
+                QuickPocketPlugin.Log.LogInfo(
+                    "[QP:MP] host denied pocket actor=" + senderActor +
+                    " viewID=" + vid + " reason=" + (info.RejectReason ?? "NotEligible"));
+                return;
+            }
+
             var snap = PocketOperations.SaveSnapshot(pgo, vid, senderActor);
             if (!PocketOperations.ValidateSnapshot(snap))
             {
@@ -2300,7 +2565,7 @@ namespace QuickPocket
                 return;
             }
 
-            if (!PocketOperations.ApplyHide(pv.gameObject, snap))
+            if (!PocketOperations.HidePocketedItemState(pv.gameObject, vid, senderActor, HideMode.HostHosted, "HostPocketRequest", snap))
             {
                 var denyData = new Hashtable { { "vid", vid }, { "nonce", nonce }, { "reason", "HideFailed" } };
                 PhotonNetwork.RaiseEvent(EV_DENY_POCKET, denyData, ackOpts, SendOptions.SendReliable);
@@ -2399,10 +2664,23 @@ namespace QuickPocket
             Vector3 dropPos = dropBase + Vector3.up * 0.5f;
 
             var pv = PhotonView.Find(vid);
-            if (pv != null && pv.gameObject != null)
+            if (pv == null || pv.gameObject == null)
             {
-                PocketOperations.RestoreSnapshot(pv.gameObject, snap, dropPos);
+                var denyData = new Hashtable { { "vid", vid }, { "nonce", nonce }, { "reason", "ItemDestroyed" }, { "clear", true } };
+                PhotonNetwork.RaiseEvent(EV_DENY_DROP, denyData, ackOpts, SendOptions.SendReliable);
+                list.RemoveAt(snapIdx);
+                if (list.Count == 0) _hostedPockets.Remove(senderActor);
+                int[] remaining = _hostedPockets.ContainsKey(senderActor)
+                    ? (int[])System.Array.ConvertAll(_hostedPockets[senderActor].ToArray(), e => e.vid)
+                    : new int[0];
+                var props = new Hashtable { { PropKeyForActor(senderActor), remaining.Length > 0 ? (object)remaining : null } };
+                PhotonNetwork.CurrentRoom.SetCustomProperties(props);
+                QuickPocketPlugin.Log.LogInfo(
+                    "[QP:MP] host deny drop actor=" + senderActor + " viewID=" + vid + " reason=ItemDestroyed clear=True");
+                return;
             }
+
+            PocketOperations.RestorePocketedItemState(pv.gameObject, vid, senderActor, RestoreMode.HostHosted, dropPos, "HostDropRequest", snap);
 
             // Remover do hostedPockets
             list.RemoveAt(snapIdx);
@@ -2454,7 +2732,14 @@ namespace QuickPocket
             // NÃO é sincronizado pelo Photon. Na perspectiva do cliente, o SpriteRenderer
             // permanece enabled → marker do TAB/minimap continua visível na posição original.
             // Solução: desabilitar explicitamente aqui após ACK.
-            ClientHideMapValuable(vid, itemName);
+            var pv = PhotonView.Find(vid);
+            if (pv != null && pv.gameObject != null)
+                HideRemoteItem(vid, pv.gameObject, PhotonNetwork.LocalPlayer.ActorNumber, HideMode.OwnerAck, "ACK_POCKET");
+            else
+            {
+                _pendingLateJoin[vid] = Time.time + LATE_JOIN_TIMEOUT;
+                _pendingLateJoinActors[vid] = PhotonNetwork.LocalPlayer.ActorNumber;
+            }
 
             int limit = GetEffectiveLimit();
             SetHudMessage("Guardado: " + CleanItemName(itemName) + " (" + _localPocket.Count + "/" + limit + ")");
@@ -2511,7 +2796,12 @@ namespace QuickPocket
             // MapValuable.Logic() continuou rastreando o item durante o pocket (SpriteRenderer off
             // não mata a coroutine). Quando re-habilitamos, o marker aponta para a posição atual
             // do item — que será atualizada pelo Photon position sync em ~50ms.
-            ClientRestoreMapValuable(vid, itemName);
+            var pv = PhotonView.Find(vid);
+            if (pv != null && pv.gameObject != null)
+                RestoreRemoteItem(vid, pv.gameObject, PhotonNetwork.LocalPlayer.ActorNumber, RestoreMode.OwnerAck,
+                    hasFinalPos ? (Vector3?)finalPos : null, "ACK_DROP");
+            else
+                _remoteSnapshots.Remove(vid);
 
             int limit = GetEffectiveLimit();
             int count = _localPocket.Count;
@@ -2534,6 +2824,12 @@ namespace QuickPocket
             string why = data.ContainsKey("reason") ? (string)data["reason"] : "?";
 
             _pendingDropAcks.Remove(nonce);
+            if (data.ContainsKey("clear") && (bool)data["clear"])
+            {
+                _localPocket.Remove(vid);
+                _clientHostedItems.Remove(vid);
+                _remoteSnapshots.Remove(vid);
+            }
             SetHudMessage("Nao foi possivel retirar: " + why);
             QuickPocketPlugin.Log.LogInfo(
                 "[QP:MP] deny drop viewID=" + vid + " reason=" + why);
@@ -2546,24 +2842,34 @@ namespace QuickPocket
             float now = Time.time;
             var expiredPocket = new List<int>();
             foreach (var kv in _pendingPocketAcks)
-                if (now - kv.Value.t > MP_REQUEST_TIMEOUT) expiredPocket.Add(kv.Key);
+                if (now - kv.Value.Timestamp > MP_REQUEST_TIMEOUT) expiredPocket.Add(kv.Key);
             foreach (int n in expiredPocket)
             {
-                int vid = _pendingPocketAcks[n].vid;
+                var req = _pendingPocketAcks[n];
                 _pendingPocketAcks.Remove(n);
                 SetHudMessage("Timeout — tente novamente.");
-                QuickPocketPlugin.Log.LogInfo("[QP:MP] pocket request timeout nonce=" + n + " vid=" + vid);
+                QuickPocketPlugin.Log.LogInfo(
+                    "[QP:MP] timeout actor=" + req.Actor +
+                    " nonce=" + n +
+                    " type=" + req.Type +
+                    " viewID=" + req.ViewID +
+                    " cleared=True hudReset=True");
             }
 
             var expiredDrop = new List<int>();
             foreach (var kv in _pendingDropAcks)
-                if (now - kv.Value.t > MP_REQUEST_TIMEOUT) expiredDrop.Add(kv.Key);
+                if (now - kv.Value.Timestamp > MP_REQUEST_TIMEOUT) expiredDrop.Add(kv.Key);
             foreach (int n in expiredDrop)
             {
-                int vid = _pendingDropAcks[n].vid;
+                var req = _pendingDropAcks[n];
                 _pendingDropAcks.Remove(n);
                 SetHudMessage("Timeout no drop — tente novamente.");
-                QuickPocketPlugin.Log.LogInfo("[QP:MP] drop request timeout nonce=" + n + " vid=" + vid);
+                QuickPocketPlugin.Log.LogInfo(
+                    "[QP:MP] timeout actor=" + req.Actor +
+                    " nonce=" + n +
+                    " type=" + req.Type +
+                    " viewID=" + req.ViewID +
+                    " cleared=True hudReset=True");
             }
         }
 
@@ -2572,7 +2878,7 @@ namespace QuickPocket
         // Versão com flag de sucesso — permite distinguir "encontrado em (0,2,0)" de "não encontrado".
         private static Vector3 TryGetPositionByActorNumber(int actorNumber, out bool found)
         {
-            foreach (var pa in UnityEngine.Object.FindObjectsOfType<PlayerAvatar>())
+            foreach (var pa in UnityEngine.Object.FindObjectsByType<PlayerAvatar>(UnityEngine.FindObjectsSortMode.None))
             {
                 var pv = pa.GetComponent<PhotonView>();
                 if (pv != null && pv.OwnerActorNr == actorNumber)
@@ -2642,9 +2948,9 @@ namespace QuickPocket
                     if (pv != null)
                     {
                         if (snap != null)
-                            PocketOperations.RestoreSnapshot(pv.gameObject, snap, safePos);
+                            PocketOperations.RestorePocketedItemState(pv.gameObject, vid, actorNumber, RestoreMode.Cleanup, safePos, "PlayerLeft", snap);
                         else
-                            RestoreWithSafeDefaults(pv.gameObject, safePos);
+                            PocketOperations.RestorePocketedItemState(pv.gameObject, vid, actorNumber, RestoreMode.SafeDefaults, safePos, "PlayerLeft", null);
                     }
                 }
                 _hostedPockets.Remove(actorNumber);
@@ -2659,9 +2965,10 @@ namespace QuickPocket
                 foreach (int vid in viewIDs)
                 {
                     _pendingLateJoin.Remove(vid);
+                    _pendingLateJoinActors.Remove(vid);
                     var pv = PhotonView.Find(vid);
                     if (pv != null)
-                        RestoreWithSafeDefaults(pv.gameObject, safePos);
+                        PocketOperations.RestorePocketedItemState(pv.gameObject, vid, actorNumber, RestoreMode.SafeDefaults, safePos, "PlayerLeftRemote", null);
                 }
                 _remoteHides.Remove(actorNumber);
             }

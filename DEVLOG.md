@@ -191,3 +191,15 @@ Apenas o master chama `RestoreWithSafeDefaults` para itens do jogador que saiu e
 - **2026-05-25** — Fase 4: RepoCompat centraliza todos os AccessTools com validação de compatibilidade. Multiplayer sync completo: PublishPocketedItems, OnRoomPropertiesUpdate (diff), OnPlayerLeftRoom (master cleanup), IMatchmakingCallbacks (OnJoinedRoom/OnLeftRoom). Late join com retry. Ownership check (Fixed/Request rejeitados, Takeover aceito). HandleDeath/HandleLevelChange/HandleMainMenu com patches reais. Build 0 erros 0 warnings.
 - **2026-05-26** — Fix crítico: removido DontDestroyOnLoad. Item permanece no parent/scene original enquanto pocketado. Eliminada destruição em ~0.2s causada por remoção das listas LevelValuables do REPO. Build 0 erros 0 warnings.
 - **2026-05-26** — Polish: HUD sempre visível (contador 0/N permanente), mensagens de ação temporárias com fade (Guardado/Retirado/Bolso cheio/Aguarde/Mouse1), 105 frases engraçadas para TooLarge em 3 níveis de ratio, shadow double-alpha corrigido, DEVLOG atualizado com backlog. Build 0 erros 0 warnings.
+
+---
+
+## 2026-11-06 � Update para R.E.P.O. v0.5.1 / Unity 6 (v1.0.12)
+
+- Verificados via ilspycmd todos os campos/metodos de reflexao e Harmony contra a Assembly-CSharp de 06/11/2026: nenhum removido.
+- Warnings CS0618 do Unity 6 corrigidos (Rigidbody.linearVelocity, FindObjectsByType).
+- RepoCompat ampliado (MapValuable, LoadingUI, RunIsLevel).
+- Bug: BepInPlugin com versao '1.0.12-test' e invalida para o BepInEx (plugin ignorado); usar sempre versao numerica no atributo.
+- Trabalho nao testado de 22/06 (DebugMode, SetActive do marcador, AudioSource) descartado; patch guardado fora do repo.
+- Aprovado em teste pelo Hiarly em 2026-11-06. Publicado no GitHub; Thunderstore/Nexus/Discord pendentes de pedido.
+

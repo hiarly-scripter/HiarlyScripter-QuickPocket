@@ -1,0 +1,9 @@
+{
+  "name": "QuickPocket",
+  "version_number": "1.0.12",
+  "website_url": "https://github.com/hiarly-scripter/HiarlyScripter-QuickPocket",
+  "description": "Guarde itens pequenos no bolso e solte depois, com HUD e multiplayer. / Pocket small items and drop them later, with HUD and multiplayer.",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305"
+  ]
+}
