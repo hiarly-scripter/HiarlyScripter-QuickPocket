@@ -1,0 +1,161 @@
+[center][size=6][b]QuickPocket[/b][/size]
+[i]Aperte H, guarde no bolso, solte quando precisar.[/i][/center]
+
+[hr]
+
+[size=5][b]O que é[/b][/size]
+QuickPocket deixa você guardar itens pequenos no "bolso" com uma tecla (padrão [b]H[/b]) e soltá-los depois. Tem HUD contador, mensagens com humor e suporte completo a multiplayer, com o host controlando o limite de slots.
+
+[size=5][b]Recursos[/b][/size]
+[list]
+[*][b]Guardar e soltar[/b] — pressione H com um item pequeno na mão para guardar; pressione de novo para pegar de volta.
+[*][b]HUD contador[/b] — mostra quantos itens estão no bolso (some sozinho ou fica fixo).
+[*][b]Multiplayer sincronizado[/b] — os outros jogadores veem o item sumir e voltar, e o marcador do mapa/TAB também some.
+[*][b]Limite pelo host[/b] — o host define quantos slots todos usam.
+[*][b]Segurança[/b] — itens perigosos (Saw/Blade/Hazard) são bloqueados de propósito para não virarem armadilhas invisíveis.
+[*][b]Solta tudo[/b] — ao morrer e ao trocar de fase (configurável).
+[/list]
+
+[size=5][b]Instalação[/b][/size]
+Requer BepInEx. Instale pelo Vortex ou extraia o ZIP na pasta do jogo (ele já vem com a estrutura [b]BepInEx/plugins/HiarlyScripter-QuickPocket/[/b]).
+
+[size=5][b]Multiplayer[/b][/size]
+[list]
+[*][b]Só o host tem o mod[/b] — não recomendado: os outros jogadores não terão a tecla nem o HUD.
+[*][b]Todos têm o mod (mesma versão)[/b] — funciona completo: cada um guarda e solta, e o host manda no limite de slots.
+[/list]
+
+[size=5][b]Configuração[/b][/size]
+O arquivo fica em BepInEx/config. A tecla só pode ser trocada editando o arquivo.
+
+[b]PocketKey[/b] [i](Seção: General · padrão: H)[/i]
+Tecla para guardar/pegar itens.
+
+[b]MaxPocketSlots[/b] [i](Seção: General · padrão: 4 · 1 a 8)[/i]
+Quantidade de slots do bolso. O limite do host pode sobrepor.
+
+[b]MaxItemBoundsSize[/b] [i](Seção: General · padrão: 1.25 · 0.1 a 5)[/i]
+Tamanho máximo do item em metros (maior dimensão).
+
+[b]PocketCooldown[/b] [i](Seção: General · padrão: 0.5 · 0.1 a 2)[/i]
+Intervalo em segundos entre ações.
+
+[b]AllowWeapons / AllowMelee / AllowDrones / AllowEnemyItems[/b] [i](Seção: Restrictions · padrão: false)[/i]
+Permitir armas, corpo a corpo, drones e itens presos a inimigos.
+
+[b]AllowOrbs / AllowDuplicates[/b] [i](Seção: Restrictions · padrão: true)[/i]
+Permitir orbes e itens repetidos.
+
+[b]UseHostLimit[/b] [i](Seção: Multiplayer · padrão: true)[/i]
+Os clientes usam o limite de slots publicado pelo host.
+
+[b]HostMaxOverride[/b] [i](Seção: Multiplayer · padrão: 4 · 1 a 8)[/i]
+Limite de slots da sala (precisa de UseHostLimit ligado).
+
+[b]SyncPocketState[/b] [i](Seção: Multiplayer · padrão: true)[/i]
+Outros jogadores veem o item sumir e voltar.
+
+[b]ShowPocketHUD / HudAlwaysVisible / HudFadeSeconds[/b] [i](Seção: HUD · padrão: true / false / 4)[/i]
+Mostrar o HUD, mantê-lo fixo, e por quantos segundos ele fica visível.
+
+[b]AutoDropIfHandsFull / DropOnDeath / DropOnLevelChange[/b] [i](Seção: Behavior · padrão: true)[/i]
+Soltar ao lado se a mão estiver ocupada, ao morrer e ao trocar de fase.
+
+[size=5][b]Problemas comuns[/b][/size]
+
+[b]O mod não aparece no jogo[/b]
+Confirme que o BepInEx está instalado e que a pasta é BepInEx/plugins/HiarlyScripter-QuickPocket/. O log do BepInEx deve mostrar "RepoCompat OK".
+
+[b]Não consigo guardar um item[/b]
+Ele pode ser grande demais, uma arma, um item perigoso (Saw/Blade/Hazard) ou o bolso pode estar cheio.
+
+[b]Os outros jogadores não veem o efeito[/b]
+Todos precisam ter o mod na mesma versão.
+
+[size=5][b]Changelog[/b][/size]
+[b]1.0.12[/b] — Compatível com R.E.P.O. v0.5.1 (Unity 6). APIs obsoletas atualizadas, validação de compatibilidade ampliada no log e versão do plugin corrigida. Comportamento aprovado mantido: marcador do mapa simétrico no multiplayer, sem colisão ou dano invisível, sem fantasma ao soltar.
+
+Código-fonte: https://github.com/hiarly-scripter/HiarlyScripter-QuickPocket
+
+[hr][hr]
+[center][i]— English version below —[/i][/center]
+[hr][hr]
+
+[center][size=6][b]QuickPocket[/b][/size]
+[i]Press H, pocket it, drop it when you need it.[/i][/center]
+
+[hr]
+
+[size=5][b]What it is[/b][/size]
+QuickPocket lets you stash small items in your "pocket" with one key (default [b]H[/b]) and drop them later. It has a counter HUD, humorous messages and full multiplayer support, with the host controlling the slot limit.
+
+[size=5][b]Features[/b][/size]
+[list]
+[*][b]Pocket and drop[/b] — press H while holding a small item to pocket it; press again to take it back.
+[*][b]Counter HUD[/b] — shows how many items are in your pocket (fades or stays visible).
+[*][b]Synced multiplayer[/b] — other players see the item vanish and return, and the map/TAB marker is hidden too.
+[*][b]Host-controlled limit[/b] — the host sets how many slots everyone uses.
+[*][b]Safety[/b] — dangerous items (Saw/Blade/Hazard) are intentionally blocked so they never become invisible hazards.
+[*][b]Drops everything[/b] — on death and on level change (configurable).
+[/list]
+
+[size=5][b]Installation[/b][/size]
+Requires BepInEx. Install through Vortex or extract the ZIP into the game folder (it already includes the [b]BepInEx/plugins/HiarlyScripter-QuickPocket/[/b] structure).
+
+[size=5][b]Multiplayer[/b][/size]
+[list]
+[*][b]Only the host has the mod[/b] — not recommended: other players will not have the key or the HUD.
+[*][b]Everyone has the mod (same version)[/b] — works fully: everyone pockets and drops, and the host controls the slot limit.
+[/list]
+
+[size=5][b]Configuration[/b][/size]
+The file is in BepInEx/config. The key can only be changed by editing the file.
+
+[b]PocketKey[/b] [i](Section: General · default: H)[/i]
+Key to pocket/retrieve items.
+
+[b]MaxPocketSlots[/b] [i](Section: General · default: 4 · 1 to 8)[/i]
+Number of pocket slots. The host limit may override it.
+
+[b]MaxItemBoundsSize[/b] [i](Section: General · default: 1.25 · 0.1 to 5)[/i]
+Max item size in meters (largest dimension).
+
+[b]PocketCooldown[/b] [i](Section: General · default: 0.5 · 0.1 to 2)[/i]
+Seconds between actions.
+
+[b]AllowWeapons / AllowMelee / AllowDrones / AllowEnemyItems[/b] [i](Section: Restrictions · default: false)[/i]
+Allow weapons, melee, drones and items attached to enemies.
+
+[b]AllowOrbs / AllowDuplicates[/b] [i](Section: Restrictions · default: true)[/i]
+Allow orbs and repeated items.
+
+[b]UseHostLimit[/b] [i](Section: Multiplayer · default: true)[/i]
+Clients use the slot limit published by the host.
+
+[b]HostMaxOverride[/b] [i](Section: Multiplayer · default: 4 · 1 to 8)[/i]
+Room slot limit (requires UseHostLimit on).
+
+[b]SyncPocketState[/b] [i](Section: Multiplayer · default: true)[/i]
+Other players see the item vanish and return.
+
+[b]ShowPocketHUD / HudAlwaysVisible / HudFadeSeconds[/b] [i](Section: HUD · default: true / false / 4)[/i]
+Show the HUD, keep it fixed, and how many seconds it stays visible.
+
+[b]AutoDropIfHandsFull / DropOnDeath / DropOnLevelChange[/b] [i](Section: Behavior · default: true)[/i]
+Drop beside you if your hands are full, on death and on level change.
+
+[size=5][b]Troubleshooting[/b][/size]
+
+[b]The mod does not show up in game[/b]
+Make sure BepInEx is installed and the folder is BepInEx/plugins/HiarlyScripter-QuickPocket/. The BepInEx log should show "RepoCompat OK".
+
+[b]I cannot pocket an item[/b]
+It may be too big, a weapon, a dangerous item (Saw/Blade/Hazard), or the pocket may be full.
+
+[b]Other players do not see the effect[/b]
+Everyone needs the mod on the same version.
+
+[size=5][b]Changelog[/b][/size]
+[b]1.0.12[/b] — Compatible with R.E.P.O. v0.5.1 (Unity 6). Obsolete APIs updated, extended compatibility validation in the log and plugin version fixed. Approved behavior kept: symmetric map marker in multiplayer, no invisible collision or damage, no ghost on drop.
+
+Source code: https://github.com/hiarly-scripter/HiarlyScripter-QuickPocket
