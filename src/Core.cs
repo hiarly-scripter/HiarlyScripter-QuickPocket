@@ -16,7 +16,7 @@ using ExitGames.Client.Photon;
 
 namespace QuickPocket
 {
-    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.12-test")]
+    [BepInPlugin("com.hiarlyscripter.quickpocket", "QuickPocket", "1.0.12")]
     [BepInProcess("REPO.exe")]
     public class QuickPocketPlugin : BaseUnityPlugin
     {
@@ -73,7 +73,7 @@ namespace QuickPocket
             _harmony = new Harmony("com.hiarlyscripter.quickpocket");
             _harmony.PatchAll();
 
-            Log.LogInfo("[QuickPocket] v1.0.12-test inicializado. Aguardando jogador...");
+            Log.LogInfo("[QuickPocket] v1.0.12 (update jogo 06/11) inicializado. Aguardando jogador...");
         }
 
         private void BindConfigs()
