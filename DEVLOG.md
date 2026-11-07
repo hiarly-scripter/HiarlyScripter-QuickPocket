@@ -203,3 +203,6 @@ Apenas o master chama `RestoreWithSafeDefaults` para itens do jogador que saiu e
 - Trabalho nao testado de 22/06 (DebugMode, SetActive do marcador, AudioSource) descartado; patch guardado fora do repo.
 - Aprovado em teste pelo Hiarly em 2026-11-06. Publicado no GitHub; Thunderstore/Nexus/Discord pendentes de pedido.
 
+
+- 2026-11-06: v1.0.12 publicada no GitHub (release), Thunderstore (https://thunderstore.io/c/repo/p/HiarlyScripter/QuickPocket/) e Discord. Thunderstore exige icone 256x256 (original 512 em media/icon_original.png). Nexus pendente.
+
