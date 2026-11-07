@@ -1687,7 +1687,7 @@ namespace QuickPocket
                 // por Photon, setar velocity em corpo kinematic gera Warning Unity.
                 if (!rb.isKinematic)
                 {
-                    rb.velocity        = Vector3.zero;
+                    rb.linearVelocity        = Vector3.zero;
                     rb.angularVelocity = Vector3.zero;
                 }
                 rb.isKinematic      = true;
@@ -1752,7 +1752,7 @@ namespace QuickPocket
                 rb.isKinematic      = false;
                 rb.useGravity       = true;
                 rb.detectCollisions = true;
-                rb.velocity         = Vector3.zero;
+                rb.linearVelocity         = Vector3.zero;
                 rb.angularVelocity  = Vector3.zero;
             }
 
@@ -2400,7 +2400,7 @@ namespace QuickPocket
             var valuableObj = pv.gameObject.GetComponent<ValuableObject>();
             if (valuableObj == null) return;
 
-            foreach (var mv in UnityEngine.Object.FindObjectsOfType<MapValuable>(true))
+            foreach (var mv in UnityEngine.Object.FindObjectsByType<MapValuable>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None))
             {
                 if (mv == null || mv.target != valuableObj) continue;
                 var srField = HarmonyLib.AccessTools.Field(typeof(MapValuable), "spriteRenderer");
@@ -2431,7 +2431,7 @@ namespace QuickPocket
             var valuableObj = pv.gameObject.GetComponent<ValuableObject>();
             if (valuableObj == null) return;
 
-            foreach (var mv in UnityEngine.Object.FindObjectsOfType<MapValuable>(true))
+            foreach (var mv in UnityEngine.Object.FindObjectsByType<MapValuable>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None))
             {
                 if (mv == null || mv.target != valuableObj) continue;
                 // Garantir que o alvo ainda existe (não foi destruído durante o pocket)
@@ -2878,7 +2878,7 @@ namespace QuickPocket
         // Versão com flag de sucesso — permite distinguir "encontrado em (0,2,0)" de "não encontrado".
         private static Vector3 TryGetPositionByActorNumber(int actorNumber, out bool found)
         {
-            foreach (var pa in UnityEngine.Object.FindObjectsOfType<PlayerAvatar>())
+            foreach (var pa in UnityEngine.Object.FindObjectsByType<PlayerAvatar>(UnityEngine.FindObjectsSortMode.None))
             {
                 var pv = pa.GetComponent<PhotonView>();
                 if (pv != null && pv.OwnerActorNr == actorNumber)

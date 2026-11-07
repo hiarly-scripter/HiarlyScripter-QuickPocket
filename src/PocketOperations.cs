@@ -154,7 +154,7 @@ namespace QuickPocket
             {
                 if (!rb.isKinematic)
                 {
-                    rb.velocity = Vector3.zero;
+                    rb.linearVelocity = Vector3.zero;
                     rb.angularVelocity = Vector3.zero;
                 }
                 rb.isKinematic = true;
@@ -314,7 +314,7 @@ namespace QuickPocket
 
                     if (!rb.isKinematic)
                     {
-                        rb.velocity = Vector3.zero;
+                        rb.linearVelocity = Vector3.zero;
                         rb.angularVelocity = Vector3.zero;
                     }
                 }
@@ -383,7 +383,7 @@ namespace QuickPocket
                         rb.position = finalPos.Value;
                         if (!rb.isKinematic)
                         {
-                            rb.velocity = Vector3.zero;
+                            rb.linearVelocity = Vector3.zero;
                             rb.angularVelocity = Vector3.zero;
                         }
                     }
@@ -413,7 +413,7 @@ namespace QuickPocket
                     rb.isKinematic = false;
                     rb.useGravity = true;
                     rb.detectCollisions = true;
-                    rb.velocity = Vector3.zero;
+                    rb.linearVelocity = Vector3.zero;
                     rb.angularVelocity = Vector3.zero;
                 }
 
@@ -761,7 +761,7 @@ namespace QuickPocket
             var valuableObj = go.GetComponent<ValuableObject>();
             if (valuableObj == null) return;
 
-            foreach (var mv in UnityEngine.Object.FindObjectsOfType<MapValuable>(true))
+            foreach (var mv in UnityEngine.Object.FindObjectsByType<MapValuable>(UnityEngine.FindObjectsInactive.Include, UnityEngine.FindObjectsSortMode.None))
             {
                 if (mv == null || mv.target != valuableObj) continue;
                 marker = mv;
